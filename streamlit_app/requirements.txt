@@ -1,0 +1,11 @@
+boto3
+streamlit
+streamlit_chat
+elasticsearch
+openai
+PyPDF2
+docx2txt
+pandas
+requests
+Pillow
+streamlit-aggrid
