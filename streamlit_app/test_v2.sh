@@ -3,7 +3,7 @@ docker pull docker.elastic.co/elasticsearch/elasticsearch:8.8.0
 #docker run -d --name es-node01 --net elastic -p 9200:9200 -p 9300:9300 -t docker.elastic.co/elasticsearch/elasticsearch:8.8.0
 docker run -d -eELASTIC_PASSWORD="=hExbx*huLo1-vtaISC=" --name es-node01 --net elastic -p 9200:9200 -p 9300:9300 -t docker.elastic.co/elasticsearch/elasticsearch:8.8.0
 docker cp es-node01:/usr/share/elasticsearch/config/certs/http_ca.crt app/
-
+# sudo sysctl -w vm.max_map_count=262144
 elastic_ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' es-node01)
 
 elastic_url="https://${elastic_ip}:9200"
