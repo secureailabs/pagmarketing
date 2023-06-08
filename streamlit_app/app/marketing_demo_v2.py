@@ -336,8 +336,9 @@ def search_surveys():
                         col = 0
                         for result in search_results:
                             with controls[col]:
-                                    st.header(result["fields"]["Name"][0])
-                                    st.image(Image.open(result["fields"]["Picture_source"][0]))
+                                if result["_score"] > 0.9:
+                                     st.header(result["fields"]["Name"][0])
+                                     st.image(Image.open(result["fields"]["Picture_source"][0]))
                             col = (col + 1) % row_size
             except Exception as e:
                 st.info(str(e))
