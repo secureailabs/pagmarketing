@@ -12,6 +12,7 @@ import requests
 from PIL import Image
 from st_aggrid import AgGrid, GridUpdateMode
 from st_aggrid.grid_options_builder import GridOptionsBuilder
+from sentence_transformers import SentenceTransformer
 
 
 ## Keep session between pages
@@ -26,6 +27,29 @@ es = Elasticsearch(
 
 )
 
+es.options(request_timeout=3600)
+patient_index = os.environ["patient_index"]
+
+@st.cache_resource
+def create_index():
+    try:
+        es.indices.create(index=patient_index,
+                            mappings= {
+                                "properties": {
+                                    "Picture_image_embedding": {
+                                        "type": "dense_vector",
+                                        "dims": 512,
+                                        "index": True,
+                                        "similarity": "cosine"
+                                        },
+                                        "Picture_source": {
+                                             "type": "keyword"
+                                        }
+                                        }
+                                        }
+                            )
+    except Exception as e:
+        print(str(e))
 
 # Create directory for images
 images_dir = 'images'
@@ -53,6 +77,15 @@ if 'past' not in st.session_state:
     st.session_state['past'] = []
 
 
+#load model
+@st.cache_resource
+def get_model():
+    model = SentenceTransformer('clip-ViT-B-32')
+    return model
+
+#cached functions
+get_model()
+create_index()
 
 def process_image(uploaded_file):
     # Create Amazon Rekognition client
@@ -74,6 +107,7 @@ def process_image(uploaded_file):
         Image={"Bytes": image},
         Attributes=["ALL"]
     )
+
     image_info = {}
     image_info["general"] = labels
     image_info["age"] = {"Low": response["FaceDetails"][0]["AgeRange"]["Low"], "High": response["FaceDetails"][0]["AgeRange"]["High"]}
@@ -164,12 +198,14 @@ def display_survey():
                 location = images_dir + "/" + response.name
                 with open(os.path.join(location),"wb") as f: 
                     f.write(response.getbuffer())  
+                embedding = get_model().encode(Image.open(location))
                 survey_responses[question + "_source"] = location
                 survey_responses[question + "_age"] = image_info["age"]
                 survey_responses[question + "_gender"] = image_info["gender"]
                 survey_responses[question + "_emotions"] = image_info["emotions"]
                 survey_responses[question + "_face_occulded"] = image_info["face_occulded"]
                 survey_responses[question + "_labels"] = image_info["general"]
+                survey_responses["Picture_image_embedding"] = embedding.tolist()
             elif options.get("type", None) == ["doc", "docx", "txt", "pdf"]:
                 doc_info = extract_text_from_document(response)
                 survey_responses[question + "_source"] = response.name
@@ -183,7 +219,7 @@ def display_survey():
     if st.button("Submit"):
         print(survey_responses)
         # Index survey responses in Elasticsearch
-        index_survey_responses(survey_responses, index="patient_stories")
+        index_survey_responses(survey_responses, index=patient_index)
 
         # Clear survey responses
         survey_responses.clear()
@@ -225,29 +261,87 @@ def list_surveys(search_results):
         st.info("No surveys found.")
 
 
-def search_surveys():
-    st.header("Search")
-
-    # User input for search query
-    query = st.text_input("Enter search query")
-    options = ["patient_stories", "chat_assistance"]
-    index = st.selectbox("Choose database", options)
-   
-    search_but = st.button("Search")
-
-    if search_but:
-        try:
-            search_results = search(query, index)
-            list_surveys(search_results)
-        except Exception as e:
-            st.info(str(e))
-
-
-def search(query, index):
+def search_es(query, index):
     # Search in Elasticsearch
     search_results = es.search(index=index, body={"query": {"query_string": {"query": query}}})
     hits = search_results["hits"]["hits"]
     return hits
+
+
+def search_surveys():
+    st.header("Search Database")
+    text,image = st.tabs(["Text", "Image"])
+    with text:
+        # User input for search query
+        query = st.text_input("Enter text query")
+
+        options = [patient_index, "chat_assistance"]
+        index = st.selectbox("Choose database", options)
+    
+        search_but = st.button("Search", key="text")
+
+        if search_but:
+            try:
+                search_results = search_es(query, index)
+                list_surveys(search_results)
+            except Exception as e:
+                st.info(str(e))
+    with image:
+        dir_path = "images"
+        res = []
+
+        # Iterate directory
+        for path in os.listdir(dir_path):
+            # check if current path is a file
+            if os.path.isfile(os.path.join(dir_path, path)):
+                res.append(dir_path + "/" + path)
+
+        query = st.selectbox("Find Image",  options=res)
+        st.image(Image.open(query))
+        #value=st.session_state['previous_bing_search'])
+        search = st.button("Search", key="image")
+        if search:
+            try:
+                ## Need to make the URL one work
+                if ('.png' in query or '.jpg' in query or '.jpeg' in query):
+                    image_info = es.search(
+                        index=patient_index,
+                        query={
+                            "term": {
+                                "Picture_source": {
+                                    "value": query,
+                                    "boost": 1.0
+                                }
+                            }
+                        },
+                        source=True)
+                    if (image_info is not None):
+                        found_image = image_info['hits']['hits'][0]["_source"]
+                        found_image_embedding = found_image['Picture_image_embedding']
+                        es_query = {
+                             "field": "Picture_image_embedding",
+                             "query_vector": found_image_embedding,
+                             "k": 5,
+                             "num_candidates": 10
+                             }
+                       # print(es_query)
+                        response = es.search(
+                                    index=patient_index,
+                                    fields=["Name", "Picture_source"],
+                                knn=es_query, source=False)
+                        print(response)
+                        search_results = response["hits"]["hits"]
+                        row_size = 3
+                        controls = st.columns(row_size)
+                        col = 0
+                        for result in search_results:
+                            with controls[col]:
+                                    st.header(result["fields"]["Name"][0])
+                                    st.image(Image.open(result["fields"]["Picture_source"][0]))
+                            col = (col + 1) % row_size
+            except Exception as e:
+                st.info(str(e))
+                    
 
 
 def gpt_chat():
