@@ -368,10 +368,13 @@ def gpt_chat():
     openai.api_base = os.environ["azure_openai_endpoint"]
     openai.api_version = "2023-03-15-preview"
     openai.api_key = os.environ['azure_openai']
+
+    # st.info(os.environ["azure_openai_endpoint"])
+    # st.info(os.environ['azure_openai'])
  
 
     response = openai.ChatCompletion.create(
-        engine="SAIL_Demo",
+        engine=os.environ['azure_openai_engine'],
         messages = [{"role": "user", "content": "Hello!"}],
         temperature=0.7,
         max_tokens=800,
@@ -388,7 +391,7 @@ def gpt_chat():
     #if st.button("Chat"):
     if prompt or run_but:
         print(prompt)
-        response = openai.ChatCompletion.create(engine="SAIL_Demo",
+        response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
                                                 max_tokens=800,
@@ -559,7 +562,7 @@ def gpt_answer(prompt):
     #     presence_penalty=0,
     #     stop=None)
     
-    response = openai.ChatCompletion.create(engine="SAIL_Demo",
+    response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
                                                 max_tokens=800,
@@ -688,7 +691,7 @@ def email_processing():
                         prompt = "Can you tell me if this following content is about " + categories_str + ". Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
                         # st.write(prompt)
                         answer = gpt_answer(prompt)
-                        st.write(answer)
+                       # st.write(answer)
                         info["category"] = answer
                         if answer != "None":
                             categorized.append(info)
