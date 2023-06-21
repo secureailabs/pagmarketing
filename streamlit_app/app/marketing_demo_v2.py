@@ -368,10 +368,13 @@ def gpt_chat():
     openai.api_base = os.environ["azure_openai_endpoint"]
     openai.api_version = "2023-03-15-preview"
     openai.api_key = os.environ['azure_openai']
+
+    # st.info(os.environ["azure_openai_endpoint"])
+    # st.info(os.environ['azure_openai'])
  
 
     response = openai.ChatCompletion.create(
-        engine="SAIL_Demo",
+        engine=os.environ['azure_openai_engine'],
         messages = [{"role": "user", "content": "Hello!"}],
         temperature=0.7,
         max_tokens=800,
@@ -388,7 +391,7 @@ def gpt_chat():
     #if st.button("Chat"):
     if prompt or run_but:
         print(prompt)
-        response = openai.ChatCompletion.create(engine="SAIL_Demo",
+        response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
                                                 max_tokens=800,
@@ -549,7 +552,17 @@ def gpt_answer(prompt):
     openai.api_base = os.environ["azure_openai_endpoint"]
     openai.api_version = "2023-03-15-preview"
     openai.api_key = os.environ['azure_openai']
-    response = openai.ChatCompletion.create(engine="SAIL_Demo",
+    # response = openai.ChatCompletion.create(
+    #     engine="SAIL_Demo",
+    #     messages = [{"role": "user", "content": "Hello!"}],
+    #     temperature=0.7,
+    #     max_tokens=800,
+    #     top_p=0.95,
+    #     frequency_penalty=0,
+    #     presence_penalty=0,
+    #     stop=None)
+    
+    response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
                                                 max_tokens=800,
@@ -562,25 +575,21 @@ def gpt_answer(prompt):
     return result
      
  
-
-    response = openai.ChatCompletion.create(
-        engine="SAIL_Demo",
-        messages = [{"role": "user", "content": "Hello!"}],
-        temperature=0.7,
-        max_tokens=800,
-        top_p=0.95,
-        frequency_penalty=0,
-        presence_penalty=0,
-        stop=None)
     
 def email_processing():
     with st.form("my_form"):
         username = st.text_input("Gmail user")
         password = st.text_input("Password", type="password")
+        categories_list = st.text_input("Categories", value="showing support,clinical trial,recently diagnosed,None", placeholder="showing support,clinical trial,recently diagnosed,None")
 
         # Every form must have a submit button.
         submitted = st.form_submit_button("Extract and Analyze")
         if submitted:
+            cat_list = categories_list.split(',')
+            # st.write(cat_list)
+            categories_str = [str(i + 1)  + ". " + cat_list[i].strip() for i in range(0, len(cat_list))]
+            categories_str = ' or '.join(categories_str)
+            # st.write(categories_str)
             SERVER = 'imap.gmail.com'
             imap_port = 993
 
@@ -669,30 +678,25 @@ def email_processing():
             if len(email_info) > 0:
                 st.header("Emails")
                 df = pd.DataFrame(email_info)
-                # st.dataframe(df)
-                # st.write(df.columns)
-
-                # gd = GridOptionsBuilder.from_dataframe(df)
-                # gd.configure_selection(selection_mode='multiple', use_checkbox=True)
-                # gd.configure_grid_options(alwaysShowHorizontalScroll=True)
-                # gd.configure_grid_options(alwaysShowVerticalScroll=True)
-                # #gd.configure_grid_options(onCellClicked = JsCode("""function(event) { <your code> }""") )
-                # gridoptions = gd.build()
-
-                # grid_table = AgGrid(df, height=200, gridOptions=gridoptions,
-                #                 update_mode=GridUpdateMode.NO_UPDATE)
                 st.dataframe(df)
-                #st.dataframe(df)
+
                 st.header("Categorize")
-                st.caption("Email are categorized into 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None")
+                st.caption("Email are categorized into " + categories_str)
+                           #1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None")
                 categorized = []
-                for i in range(0, len(email_info)):
-                    info = email_info[i]
-                    prompt = "Can you tell me if this following content is about 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None. Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
-                    answer = gpt_answer(prompt)
-                    info["category"] = answer
-                    if answer != "None":
-                        categorized.append(info)
+                try:
+                    for i in range(0, len(email_info)):
+                        info = email_info[i]
+                        # prompt = "Can you tell me if this following content is about 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None. Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
+                        prompt = "Can you tell me if this following content is about " + categories_str + ". Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
+                        # st.write(prompt)
+                        answer = gpt_answer(prompt)
+                       # st.write(answer)
+                        info["category"] = answer
+                        if answer != "None":
+                            categorized.append(info)
+                except:
+                    st.info("API is overloaded")
                 
                 df_new = pd.DataFrame(categorized)  
                 st.dataframe(df_new[["category", "content"]])
