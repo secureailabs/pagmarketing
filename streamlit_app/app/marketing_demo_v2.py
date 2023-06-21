@@ -13,6 +13,9 @@ from PIL import Image
 from st_aggrid import AgGrid, GridUpdateMode
 from st_aggrid.grid_options_builder import GridOptionsBuilder
 from sentence_transformers import SentenceTransformer
+import email
+import imaplib
+from email.header import decode_header
 
 
 ## Keep session between pages
@@ -55,6 +58,17 @@ def create_index():
 images_dir = 'images'
 if not os.path.exists(images_dir):
    os.makedirs(images_dir)
+
+
+email_dir = 'email'
+if not os.path.exists(email_dir):
+   os.makedirs(email_dir)
+
+if not os.path.exists(email_dir + "/images"):
+   os.makedirs(email_dir + "/images")
+
+if not os.path.exists(email_dir + "/docs"):
+   os.makedirs(email_dir + "/docs")
 
 docs_dir = 'docs'
 if not os.path.exists(docs_dir):
@@ -154,7 +168,7 @@ def main():
 
   #  st.sidebar.image('https://secureailabs.com/wp-content/themes/sail/images/logo.png')
     st.sidebar.title("PAG Patient Storybank")
-    page = st.sidebar.selectbox("", ["Patient Intake", "Story Assistant", "Search", "Find the Story"])
+    page = st.sidebar.selectbox("", ["Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing"])
     # "Patient Stories"
     if page == "Patient Intake":
         display_survey()
@@ -166,6 +180,8 @@ def main():
         gpt_chat()
     elif page == "Find the Story":
         bing_search()
+    elif page == "Email Processing":
+        email_processing()
 
 # Streamlit app
 def display_survey():
@@ -526,6 +542,163 @@ def bing_search():
             except Exception as ex:
                 raise ex
 
+
+def gpt_answer(prompt):
+
+    openai.api_type = "azure"
+    openai.api_base = os.environ["azure_openai_endpoint"]
+    openai.api_version = "2023-03-15-preview"
+    openai.api_key = os.environ['azure_openai']
+    response = openai.ChatCompletion.create(engine="SAIL_Demo",
+                                                messages = [{"role": "user", "content": prompt}],
+                                                temperature=0.7,
+                                                max_tokens=800,
+                                                top_p=0.95,
+                                                frequency_penalty=0,
+                                                presence_penalty=0,
+                                                stop=None)
+    result = response.choices[0]["message"]["content"]
+    
+    return result
+     
+ 
+
+    response = openai.ChatCompletion.create(
+        engine="SAIL_Demo",
+        messages = [{"role": "user", "content": "Hello!"}],
+        temperature=0.7,
+        max_tokens=800,
+        top_p=0.95,
+        frequency_penalty=0,
+        presence_penalty=0,
+        stop=None)
+    
+def email_processing():
+    with st.form("my_form"):
+        username = st.text_input("Gmail user")
+        password = st.text_input("Password", type="password")
+
+        # Every form must have a submit button.
+        submitted = st.form_submit_button("Extract and Analyze")
+        if submitted:
+            SERVER = 'imap.gmail.com'
+            imap_port = 993
+
+            # connect to the server and go to its inbox
+            mail = imaplib.IMAP4_SSL(SERVER, imap_port)
+            mail.login(username + "@gmail.com", password)
+            # we choose the inbox but you can select others
+            mail.select('inbox')
+
+            # we'll search using the ALL criteria to retrieve
+            # every message inside the inbox
+            # it will return with its status and a list of ids
+            # status, data = mail.search(None, 'UNSEEN')
+            status, data = mail.search(None, 'ALL')
+            mail_ids = []
+            for block in data:
+                # the split function called without parameter
+                # transforms the text or bytes into a list using
+                # as separator the white spaces:
+                # b'1 2 3'.split() => [b'1', b'2', b'3']
+                mail_ids += block.split()
+            # now for every id we'll fetch the email
+            # to extract its content
+            email_info = []
+            for i in mail_ids:
+                # the fetch function fetch the email given its id
+                # and format that you want the message to be
+                status, response = mail.fetch(i, '(RFC822)')
+                
+                raw_email = response[0][1]
+                # st.write(raw_email)
+                email_message = email.message_from_bytes(raw_email)
+                files_list = []
+                mail_content = ''
+                content_obj = email_message.get_payload()[0]
+               
+                if content_obj.get_content_type() == "text/plain":
+                    mail_content = content_obj.get_payload(decode=True).decode()
+
+                for i in range(1, len(email_message.get_payload())):
+                   # st.write(email_message.get_payload()[i].get_content_type())
+                    img = email_message.get_payload()[i]
+                    content_type = img.get_content_type()
+                    # st.write(img.get_filename())
+                    # certain imaes
+                    dir = None
+                    if "image" in content_type:
+                        dir = "images"
+                    if "pdf" in content_type:
+                        dir = "docs"
+                    if "document" in content_type:
+                        dir = "docs"
+
+                    if dir:
+                        type_file = content_type.split("/")[1]
+                        file_name = img.get_filename()
+                        filePath = os.path.join(email_dir + "/" + dir, file_name)
+                        if not os.path.isfile(filePath):
+                            fp = open(filePath, 'wb')
+                            fp.write(img.get_payload(decode=True))
+                            fp.close()
+                        
+                        files_list.append(filePath)
+                
+                # # Extract email information (e.g., subject, sender, date, body)
+                mail_subject = decode_header(email_message["Subject"])[0][0]
+                mail_from = email_message["From"]
+                # # date = email_message["Date"]
+                #mail_content = ''
+                if email_message.is_multipart():
+                     for part in email_message.walk():
+                         
+                          content_type = part.get_content_type()
+                       #   st.write(part.get_payload(decode=True))
+                          if content_type == "text/plain":
+                              mail_content = part.get_payload(decode=True).decode()
+                              break
+                else:
+                #      # Non-multipart content (plain text or other types)
+                      mail_content = email_message.get_payload(decode=True).decode()
+
+                
+                
+                email_info.append({"from_name": mail_from.split("<")[0], "from_email":mail_from.split("<")[1].replace(">",""),"subject": mail_subject, "content": mail_content, "attachments": files_list})
+        
+            if len(email_info) > 0:
+                st.header("Emails")
+                df = pd.DataFrame(email_info)
+                # st.dataframe(df)
+                # st.write(df.columns)
+
+                # gd = GridOptionsBuilder.from_dataframe(df)
+                # gd.configure_selection(selection_mode='multiple', use_checkbox=True)
+                # gd.configure_grid_options(alwaysShowHorizontalScroll=True)
+                # gd.configure_grid_options(alwaysShowVerticalScroll=True)
+                # #gd.configure_grid_options(onCellClicked = JsCode("""function(event) { <your code> }""") )
+                # gridoptions = gd.build()
+
+                # grid_table = AgGrid(df, height=200, gridOptions=gridoptions,
+                #                 update_mode=GridUpdateMode.NO_UPDATE)
+                st.dataframe(df)
+                #st.dataframe(df)
+                st.header("Categorize")
+                st.caption("Email are categorized into 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None")
+                categorized = []
+                for i in range(0, len(email_info)):
+                    info = email_info[i]
+                    prompt = "Can you tell me if this following content is about 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None. Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
+                    answer = gpt_answer(prompt)
+                    info["category"] = answer
+                    if answer != "None":
+                        categorized.append(info)
+                
+                df_new = pd.DataFrame(categorized)  
+                st.dataframe(df_new[["category", "content"]])
+
+            mail.close()
+            mail.logout()
 
 if __name__ == "__main__":
     main()
