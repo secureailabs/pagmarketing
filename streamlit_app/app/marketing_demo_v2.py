@@ -17,7 +17,10 @@ import email
 import imaplib
 from email.header import decode_header
 import time
+from email.mime.text import MIMEText
+import smtplib
 
+st.set_page_config(layout="wide")
 
 ## Keep session between pages
 
@@ -94,8 +97,15 @@ if 'past' not in st.session_state:
 if 'contact_list' not in st.session_state:
     st.session_state['contact_list'] = []
 
-# if "email_table" not in st.session_state:
-#     st.session_state["email_table"] = None
+if 'email_category' not in st.session_state:
+    st.session_state['email_category'] = {}
+
+if "email_saved" not in st.session_state:
+     st.session_state["email_saved"] = []
+
+
+if 'email_response' not in st.session_state:
+    st.session_state['email_response'] = {}
 
 
 #load model
@@ -175,7 +185,7 @@ def main():
 
   #  st.sidebar.image('https://secureailabs.com/wp-content/themes/sail/images/logo.png')
     st.sidebar.title("PAG Patient Storybank")
-    page = st.sidebar.selectbox("", ["Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry"])
+    page = st.sidebar.selectbox("", ["Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry", "Email Registry"])
     # "Patient Stories"
     if page == "Patient Intake":
         display_survey()
@@ -191,6 +201,8 @@ def main():
         email_processing()
     elif page == "Contact Registry":
         contact_registry()
+    elif page == "Email Registry":
+        email_registry()
 
 # Streamlit app
 def display_survey():
@@ -694,8 +706,8 @@ def email_processing():
                     mail_content = email_message.get_payload(decode=True).decode()
 
             
-            
-            email_info.append({"from_name": mail_from.split("<")[0], "from_email":mail_from.split("<")[1].replace(">",""),"subject": mail_subject, "content": mail_content, "attachments": files_list}) #, "add_contact": False})
+            if not ("Google" in  mail_from.split("<")[0]):
+                email_info.append({"from_name": mail_from.split("<")[0], "from_email":mail_from.split("<")[1].replace(">",""),"subject": mail_subject, "content": mail_content, "attachments": files_list}) #, "add_contact": False})
         if len(email_info) > 0:
             #st.header("Emails")
             #df = pd.DataFrame(email_info)
@@ -711,7 +723,11 @@ def email_processing():
                     # prompt = "Can you tell me if this following content is about 1. showing support or 2. clinical trial or 3. recently diagnosed or 4. None. Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
                     prompt = "Can you tell me if this following content is about " + categories_str + ". Here is the content: " + info["content"] + ". Answer from the 4 choices provided and only answer in 2 words"
                     # st.write(prompt)
-                    answer = gpt_answer(prompt)
+                    if prompt in st.session_state['email_category']:
+                        answer = st.session_state['email_category'][prompt]
+                    else:
+                        answer = gpt_answer(prompt)
+                        st.session_state['email_category'][prompt] = answer
                     # st.write(answer)
                     info["category"] = answer
                     #if answer != "None":
@@ -728,17 +744,20 @@ def email_processing():
 
     if "email_table" in st.session_state:
         #df_new = st.session_state["email_table"] 
-        gd = GridOptionsBuilder.from_dataframe(st.session_state["email_table"])
+        df = st.session_state["email_table"]
+        columns_needed = ["category", "from_name", "from_email", "subject", "content"]
+        df = df[columns_needed]
+        gd = GridOptionsBuilder.from_dataframe(df)
         gd.configure_selection(selection_mode='multiple', use_checkbox=True, rowMultiSelectWithClick=False)
         gridoptions = gd.build()
-
-        grid_table = AgGrid(st.session_state["email_table"], height=500, gridOptions=gridoptions,
+        
+        grid_table = AgGrid(df, height=500, gridOptions=gridoptions,
                     update_mode=GridUpdateMode.SELECTION_CHANGED, reload_date=False, 
                     data_return_mode="as_input")
         edited_df = pd.DataFrame(grid_table["selected_rows"])
         #st.write(edited_df)
         #edited_df = st.data_editor(st.session_state["email_table"], num_rows="dynamic")
-        save_contact = st.button("Save to Contact List")
+        save_contact = st.button("Save to List")
 
     #    st.info("Saved to Contact List!")
         if save_contact:
@@ -748,14 +767,88 @@ def email_processing():
             # st.write(edited_df[columns_needed].to_dict("records"))
             st.session_state["contact_list"].extend(edited_df[columns_needed].to_dict("records"))
             #st.write(st.session_state["contact_list"])
-            st.info("Contacts Saved")
+            
              #st.dataframe(df_new[["category", "content"]])
+            columns_needed = ["from_name", "from_email", "subject", "content", "category"]
+            st.session_state["email_saved"].extend(edited_df[columns_needed].to_dict("records"))
+            st.info("Saved")
 
 def contact_registry():
     st.header("Contact Registry")
     df = pd.DataFrame(st.session_state["contact_list"])
     df.drop_duplicates(inplace=True)
     st.dataframe(df)
+
+def email_registry():
+    st.header("Email Registry")
+    #with st.form("my_form"):
+    if len(st.session_state["email_saved"]) > 0:
+        df = pd.DataFrame(st.session_state["email_saved"])
+        df.drop_duplicates(inplace=True)
+        column_order = ["category", "from_name", "from_email", "subject", "content"]
+        df = df[column_order]
+    #   st.dataframe(df)
+
+        gd = GridOptionsBuilder.from_dataframe(df)
+        gd.configure_selection(selection_mode='multiple', use_checkbox=True, rowMultiSelectWithClick=False)
+        gd.configure_columns("content", wrapText = True)
+        gd.configure_columns("content", autoHeight = True)
+        gridoptions = gd.build()
+
+        
+
+        grid_table = AgGrid(df, height=500, gridOptions=gridoptions,
+                    update_mode=GridUpdateMode.SELECTION_CHANGED, reload_date=False, 
+                    data_return_mode="as_input")
+        edited_df = pd.DataFrame(grid_table["selected_rows"])
+        if len(edited_df) > 0:
+            messages = '\n'.join(list(edited_df["content"]))
+        subject = st.text_input("Enter your subject")
+        col1, col2 = st.columns([1,1])
+        st.session_state.sample = ""
+        with col1:
+            response = st.text_area("Enter your response here")
+        with col2:
+            gpt_res = st.button("generate a response")
+            if gpt_res:
+                prompt = "Can you give me a response to this email received?" + "Email received is as follows: " + messages
+                answer = ""
+                if prompt in st.session_state['email_response']:
+                    answer = st.session_state['email_response'][prompt]
+                else:
+                    answer = gpt_answer(prompt)
+                    st.session_state['email_response'][prompt] = answer
+                #gpt_response = gpt_answer(prompt)
+                sample = st.text(answer)
+        username = st.text_input("Gmail user")
+        password = st.text_input("Password", type="password")
+        send_email = st.button("Send Response")
+        if send_email:
+            SMTP_HOST = 'smtp.google.com'
+            SMTP_USER = username + "@gmail.com"
+            SMTP_PASS = password
+
+            # # Craft the email by hand
+            from_email = SMTP_USER
+            to_emails = list(edited_df["from_email"])
+            body = response
+            headers = f"From: {from_email}\r\n"
+            headers += f"To: {', '.join(to_emails)}\r\n" 
+            headers += f"Subject: " + subject + "\r\n"
+            email_message = headers + "\r\n" + body  # Blank line needed between headers and body
+
+            server = smtplib.SMTP('smtp.gmail.com')
+            server.connect('smtp.gmail.com', 587)
+            server.ehlo()
+            server.starttls()
+            server.login(SMTP_USER, password)
+
+            server.sendmail(from_email, to_emails, email_message)
+            server.quit()
+            st.info("Sent")
+
+
+
 
 
 
