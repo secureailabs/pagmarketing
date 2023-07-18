@@ -745,10 +745,12 @@ def email_processing():
     if "email_table" in st.session_state:
         #df_new = st.session_state["email_table"] 
         df = st.session_state["email_table"]
-        columns_needed = ["category", "from_name", "from_email", "subject", "content"]
+        columns_needed = ["category", "content", "subject", "from_name", "from_email", "attachments"]
         df = df[columns_needed]
         gd = GridOptionsBuilder.from_dataframe(df)
         gd.configure_selection(selection_mode='multiple', use_checkbox=True, rowMultiSelectWithClick=False)
+        gd.configure_columns("content", wrapText = True)
+        gd.configure_columns("content", autoHeight = True)
         gridoptions = gd.build()
         
         grid_table = AgGrid(df, height=500, gridOptions=gridoptions,
@@ -785,7 +787,7 @@ def email_registry():
     if len(st.session_state["email_saved"]) > 0:
         df = pd.DataFrame(st.session_state["email_saved"])
         df.drop_duplicates(inplace=True)
-        column_order = ["category", "from_name", "from_email", "subject", "content"]
+        column_order = ["category", "content", "subject", "from_name", "from_email"]
         df = df[column_order]
     #   st.dataframe(df)
 
