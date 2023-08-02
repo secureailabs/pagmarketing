@@ -841,8 +841,8 @@ def email_registry():
             headers += f"Subject: " + subject + "\r\n"
             email_message = headers + "\r\n" + body  # Blank line needed between headers and body
 
-            server = smtplib.SMTP('smtp.gmail.com')
-            server.connect('smtp.gmail.com', 587)
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            # server.connect('smtp.gmail.com', 587)
             server.ehlo()
             server.starttls()
             server.login(SMTP_USER, password)
