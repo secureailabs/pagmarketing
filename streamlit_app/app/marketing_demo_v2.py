@@ -366,7 +366,7 @@ def search_surveys():
                                     index=patient_index,
                                     fields=["Name", "Picture_source"],
                                 knn=es_query, source=False)
-                        print(response)
+                        # print(response)
                         search_results = response["hits"]["hits"]
                         row_size = 3
                         controls = st.columns(row_size)
@@ -411,7 +411,7 @@ def gpt_chat():
 
     #if st.button("Chat"):
     if prompt or run_but:
-        print(prompt)
+        # print(prompt)
         response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
@@ -472,7 +472,7 @@ def bing_search():
                 params = {"knowledgeRequest" : {"invokedSkills": ["SimilarImages"],}}
                 try:
                     response = requests.post(visual_endpoint, headers=headers, files=file,params=params)
-                    print(response.request)
+                    # print(response.request)
                     response.raise_for_status()
                     result = response.json()
                     #st.session_state['previous_bing_search_results'] = result
@@ -527,7 +527,7 @@ def bing_search():
     with text_search:
         query = st.text_input("Find")
         search = st.button("Search", key="text_search")
-        print("here 1")
+        # print("here 1")
         # Construct a request
         if search:
             mkt = 'en-US'
@@ -582,7 +582,7 @@ def gpt_answer(prompt):
     #     frequency_penalty=0,
     #     presence_penalty=0,
     #     stop=None)
-    
+    # print("Info" + prompt)
     response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
                                                 temperature=0.7,
@@ -591,6 +591,7 @@ def gpt_answer(prompt):
                                                 frequency_penalty=0,
                                                 presence_penalty=0,
                                                 stop=None)
+    
     result = response.choices[0]["message"]["content"]
     
     return result
@@ -638,6 +639,7 @@ def email_processing():
         # it will return with its status and a list of ids
         # status, data = mail.search(None, 'UNSEEN')
         status, data = mail.search(None, 'ALL')
+  
         mail_ids = []
         for block in data:
             # the split function called without parameter
@@ -839,8 +841,8 @@ def email_registry():
             headers += f"Subject: " + subject + "\r\n"
             email_message = headers + "\r\n" + body  # Blank line needed between headers and body
 
-            server = smtplib.SMTP('smtp.gmail.com')
-            server.connect('smtp.gmail.com', 587)
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            # server.connect('smtp.gmail.com', 587)
             server.ehlo()
             server.starttls()
             server.login(SMTP_USER, password)
