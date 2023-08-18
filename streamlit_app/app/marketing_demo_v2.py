@@ -175,11 +175,11 @@ def extract_text_from_document(uploaded_file):
 
 ## Main Page Code
 
-logo_image = "https://secureailabs.com/wp-content/themes/sail/images/logo.png"
+logo_image = "https://arrayinsights.com/wp-content/themes/array/images/logo.png"
 
 def main():
     st.sidebar.markdown(
-        f'<img src="https://secureailabs.com/wp-content/themes/sail/images/logo.png" alt="Logo" style="width: 50px;">',
+        f'<img src="https://arrayinsights.com/wp-content/themes/array/images/logo.png" alt="Logo" style="width: 50px;">',
         unsafe_allow_html=True
     )
 
