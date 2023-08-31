@@ -11,3 +11,4 @@ Pillow
 streamlit-aggrid
 sentence-transformers
 streamlit-image-select
+streamlit-extras

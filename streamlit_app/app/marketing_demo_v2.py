@@ -4,6 +4,7 @@ import json
 import streamlit as st
 from streamlit_chat import message
 from streamlit_image_select import image_select
+#from streamlit_extras.no_default_selectbox import selectbox
 from elasticsearch import Elasticsearch
 import openai
 import PyPDF2
@@ -426,16 +427,20 @@ def gpt_chat():
     
 
     prompt = st.text_area("Enter your prompt")
-    patient_story = st.selectbox("Add Patient Story", options=stories.keys())
-    #patient_story = st.
+    patient_story = st.multiselect("Add Patient Stories", options=stories.keys())
     run_but = st.button("Run")
     # message("Hello! I am your story assistant. How may I help you?", is_user=False)
 
 
     #if st.button("Chat"):
-    if prompt or run_but:
-        if patient_story:
-            prompt = prompt + stories[patient_story]
+    #prompt or 
+    if run_but:
+        i = 1
+        if len(patient_story) > 0:
+            story_list = ""
+            for patient in patient_story:
+                prompt = prompt + "\n" + str(i) + ". "+ stories[patient]
+                i = i + 1
         # print(prompt)
         response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
