@@ -12,3 +12,11 @@ streamlit-aggrid
 sentence-transformers
 streamlit-image-select
 streamlit-extras
+geonamescache
+geopy
+opencage
+folium
+streamlit_folium
+wordcloud
+bokeh==2.4.3 
+numpy 
