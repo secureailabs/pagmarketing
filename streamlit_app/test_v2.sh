@@ -22,6 +22,7 @@ docker run -d -e azure_openai="azure_openai_key" \
 -e elastic_url="${elastic_url}" \
 -e patient_index="${patient_index}" \
 -e azure_openai_engine="model_deployment_name"
+-e opencage_key="opencage_key"
 --name pag-node01 --net elastic -p 8501:8501 pag_marketing_streamlit
 # docker cp http_ca.crt pag-node01:/app/
 curl http://0.0.0.0:8501
