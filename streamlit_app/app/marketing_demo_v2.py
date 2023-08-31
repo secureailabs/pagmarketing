@@ -3,6 +3,7 @@ import boto3
 import json
 import streamlit as st
 from streamlit_chat import message
+from streamlit_image_select import image_select
 from elasticsearch import Elasticsearch
 import openai
 import PyPDF2
@@ -333,8 +334,10 @@ def search_surveys():
             if os.path.isfile(os.path.join(dir_path, path)):
                 res.append(dir_path + "/" + path)
 
-        query = st.selectbox("Find Image",  options=res)
-        st.image(Image.open(query))
+        query = image_select(
+                    label="Select an image",
+                    images=res
+                    )
         #value=st.session_state['previous_bing_search'])
         search = st.button("Search", key="image")
         if search:
@@ -457,8 +460,11 @@ def bing_search():
             # check if current path is a file
             if os.path.isfile(os.path.join(dir_path, path)):
                 res.append(dir_path + "/" + path)
-
-        query = st.selectbox("Find Image",  options=res)
+        # print(res)
+        query = image_select(
+                    label="Select an image",
+                    images=res
+                    )
         #value=st.session_state['previous_bing_search'])
         search = st.button("Search")
         if search:
@@ -467,7 +473,7 @@ def bing_search():
                 # image_query = open(images_dir + "/" + query, 'rb')
                 # st.image(Image.open(images_dir + "/" + query))
                 image_query = open(query, 'rb')
-                st.image(Image.open(query))
+                # st.image(Image.open(query))
                 file = {'image': ('MY-IMAGE', image_query)} 
                 params = {"knowledgeRequest" : {"invokedSkills": ["SimilarImages"],}}
                 try:
@@ -503,19 +509,21 @@ def bing_search():
 
                         tabs = st.tabs(tag_actions_of_interest)
                         df = pd.DataFrame(list_items)
-                    # required_columns = ["contentUrl", "hostPageUrl", "thumbnailUrl"]
-                        for i in range(0, len(tag_actions_of_interest)):
-                            with tabs[i]:
-                                st.dataframe(
-                                    df[df["action_type"] == tag_actions_of_interest[i]],
-                                    use_container_width=True,
-                                    column_config={
-                                    "url": st.column_config.LinkColumn("page link"),
-                                    "contentUrl": st.column_config.ImageColumn("image link"),
-                                    "hostPageUrl": st.column_config.LinkColumn("host page link"),
-                                    "thumbnailUrl": st.column_config.ImageColumn("thumbnail link"),
-                                    }
-                                    )
+                        if len(df) <= 0:
+                            st.info("No Results Found")
+                        else:
+                            for i in range(0, len(tag_actions_of_interest)):
+                                with tabs[i]:
+                                    st.dataframe(
+                                        df[df["action_type"] == tag_actions_of_interest[i]],
+                                        use_container_width=True,
+                                        column_config={
+                                        "url": st.column_config.LinkColumn("page link"),
+                                        "contentUrl": st.column_config.ImageColumn("image link"),
+                                        "hostPageUrl": st.column_config.LinkColumn("host page link"),
+                                        "thumbnailUrl": st.column_config.ImageColumn("thumbnail link"),
+                                        }
+                                        )
 
                         
                     else:
