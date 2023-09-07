@@ -10,6 +10,7 @@ requests
 Pillow
 streamlit-aggrid
 sentence-transformers
+openpyxl
 streamlit-image-select
 streamlit-extras
 geonamescache
@@ -19,4 +20,4 @@ folium
 streamlit_folium
 wordcloud
 bokeh==2.4.3 
-numpy 
+numpy

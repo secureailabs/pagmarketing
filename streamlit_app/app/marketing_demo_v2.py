@@ -6,6 +6,7 @@ from streamlit_chat import message
 from streamlit_image_select import image_select
 #from streamlit_extras.no_default_selectbox import selectbox
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 import openai
 import PyPDF2
 import docx2txt
@@ -21,6 +22,7 @@ from email.header import decode_header
 import time
 from email.mime.text import MIMEText
 import smtplib
+from datetime import datetime
 import geonamescache
 from opencage.geocoder import OpenCageGeocode
 import folium  
@@ -208,7 +210,9 @@ def main():
 
   #  st.sidebar.image('https://secureailabs.com/wp-content/themes/sail/images/logo.png')
     st.sidebar.title("PAG Patient Storybank")
-    page = st.sidebar.selectbox("", ["Dashboard", "Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry", "Email Registry"])
+
+    page = st.sidebar.selectbox("", ["Dashboard", "Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry", "Email Registry", "Process Intake Forms External"])
+
     # "Patient Stories"
     if page == "Patient Intake":
         display_survey()
@@ -226,6 +230,8 @@ def main():
         contact_registry()
     elif page == "Email Registry":
         email_registry()
+    elif page == "Process Intake Forms External":
+        upload_process_sheets()
     elif page == "Dashboard":
         dashboard()
 
@@ -376,7 +382,7 @@ def search_surveys():
         # User input for search query
         query = st.text_input("Enter text query")
 
-        options = [patient_index, "chat_assistance"]
+        options = [patient_index, "chat_assistance", "patient_external_v2"]
         index = st.selectbox("Choose database", options)
     
         search_but = st.button("Search", key="text")
@@ -948,6 +954,22 @@ def email_registry():
             server.quit()
             st.info("Sent")
 
+
+def upload_process_sheets():
+    uploaded_file = st.file_uploader("Upload Sheets with Responses", type=["xls", "xlsx"], key="upload_sheets")
+    if uploaded_file:
+        st.info(uploaded_file.name)
+        df = pd.read_excel(uploaded_file)
+        df["Date"] = df["Timestamp"].apply(lambda x: x.date())
+        st.dataframe(df)
+
+        index_data = st.button("Index Data")
+        document_list = json.loads(df.to_json(orient="records"))
+
+        if index_data:
+            bulk(es, document_list, index='patient_external_v2')
+            st.info("Indexed")
+
 def dashboard():
     #map, wordcloud, stats = st.tabs(["Map", "WordCloud", "Statistics"])
     continuous_attributes = ["Age"]
@@ -1069,24 +1091,6 @@ def dashboard():
             st.bokeh_chart(p, use_container_width=False)
         
     
-
-
-
-
-
-
-     
-   # st.map(df_loc)
-
-    
-    
-
-    
-
-
-
-
-
 
 
 
