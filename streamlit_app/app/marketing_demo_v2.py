@@ -4,6 +4,7 @@ import json
 import streamlit as st
 from streamlit_chat import message
 from streamlit_image_select import image_select
+#from streamlit_extras.no_default_selectbox import selectbox
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 import openai
@@ -22,8 +23,21 @@ import time
 from email.mime.text import MIMEText
 import smtplib
 from datetime import datetime
+import geonamescache
+from opencage.geocoder import OpenCageGeocode
+import folium  
+from streamlit_folium import folium_static
+from wordcloud import WordCloud, STOPWORDS, ImageColorGenerator
+from bokeh.palettes import Category20c, Spectral3, Spectral6, Category10
+from bokeh.plotting import figure
+import numpy as np
 
 st.set_page_config(layout="wide")
+
+geocoder = OpenCageGeocode(os.environ["opencage_key"]) 
+
+stopwords = set(STOPWORDS)
+stopwords.add("said")
 
 ## Keep session between pages
 
@@ -67,6 +81,13 @@ if not os.path.exists(images_dir):
    os.makedirs(images_dir)
 
 
+if "disabled" not in st.session_state:
+    st.session_state.disabled = True
+
+def callback():
+    st.session_state.disabled = False
+
+
 email_dir = 'email'
 if not os.path.exists(email_dir):
    os.makedirs(email_dir)
@@ -88,7 +109,8 @@ questions = [
     ("Life Story", "textarea", {}, ''),
     ("Tags", "text", {}, "(comma delimited words)"),
     ("Picture", "file", {"type": ["png", "jpeg", "jpg"]}, ''),
-    ("Additional Documents", "file", {"type": ["doc", "docx", "txt", "pdf"]}, '')
+    ("Additional Documents", "file", {"type": ["doc", "docx", "txt", "pdf"]}, ''),
+    ("Location", "location", {}, '')
 ]
 
 if 'generated' not in st.session_state:
@@ -188,7 +210,9 @@ def main():
 
   #  st.sidebar.image('https://secureailabs.com/wp-content/themes/sail/images/logo.png')
     st.sidebar.title("PAG Patient Storybank")
-    page = st.sidebar.selectbox("", ["Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry", "Email Registry", "Process Intake Forms External"])
+
+    page = st.sidebar.selectbox("", ["Dashboard", "Patient Intake", "Story Assistant", "Search", "Find the Story", "Email Processing", "Contact Registry", "Email Registry", "Process Intake Forms External"])
+
     # "Patient Stories"
     if page == "Patient Intake":
         display_survey()
@@ -208,6 +232,8 @@ def main():
         email_registry()
     elif page == "Process Intake Forms External":
         upload_process_sheets()
+    elif page == "Dashboard":
+        dashboard()
 
 # Streamlit app
 def display_survey():
@@ -228,13 +254,49 @@ def display_survey():
             response = st.text_area(question + display_info)
         elif question_type == "file":
             response = st.file_uploader(question + display_info, type=options.get("type", ["png", "jpeg", "jpg"]), key=question)
+        elif question_type == "location":
+            states_dict = dict()
+            cs = ["Select a city"]
+            gc = geonamescache.GeonamesCache()
+            city = gc.get_cities()
+            states = gc.get_us_states()
+
+            # ---STATES---
+
+            for state, code in states.items():
+                states_dict[code["name"]] = state
+
+            option_s = st.selectbox("Select a State", states_dict.keys())
+
+            # ---CITIES---
+
+            for city in city.values():
+                if city["countrycode"] == "US":
+                    if city["admin1code"] == states_dict[option_s]:
+                        cs.append(city["name"])
+
+            option_c = st.selectbox("Select a city", cs, disabled=st.session_state.disabled, on_change=callback())
+            response = option_c + ", " + option_s + ", USA"
+
         else:
             response = st.text_input(question)
+        
+
 
         if response:
             if question == 'Tags':
                 keywords = response.split(",")
                 survey_responses[question] = [key.strip() for key in keywords]
+            elif question == "Location":
+                location = geocoder.geocode(response)
+                latitude = location[0]['geometry']['lat']  
+                longitude = location[0]['geometry']['lng']  
+                survey_responses[question] = {}
+                survey_responses[question]["address"] = response
+                survey_responses[question]["location"] = {}
+                survey_responses[question]["location"]["lat"] =  latitude
+                survey_responses[question]["location"]["lon"] = longitude
+                survey_responses[question]["properties"] = {"location" : {"type" : "geo_point" }}
             elif options.get("type", None) == ["png", "jpeg", "jpg"]:
                 image_info = json.loads(json.dumps(process_image(response)))
                 location = images_dir + "/" + response.name
@@ -278,6 +340,7 @@ def list_surveys(search_results):
        if "Tags" in hit["_source"]:
            if type(hit["_source"]["Tags"]) == str:
                hit["_source"]["Tags"] = hit["_source"]["Tags"].split(',')
+    #st.json(search_results)
 
     # Display surveys in a table
     
@@ -289,6 +352,8 @@ def list_surveys(search_results):
             df["Picture_gender"] = df["Picture_gender"].astype(str)
         if "Picture_face_occulded" in df.columns:
             df["Picture_face_occulded"] = df["Picture_face_occulded"].astype(str)
+        if "Location" in df.columns:
+            df["Location"] = pd.json_normalize(df["Location"])["address"]
 
         gd = GridOptionsBuilder.from_dataframe(df)
         gd.configure_selection(selection_mode='multiple', use_checkbox=True)
@@ -305,7 +370,7 @@ def list_surveys(search_results):
 
 def search_es(query, index):
     # Search in Elasticsearch
-    search_results = es.search(index=index, body={"query": {"query_string": {"query": query}}})
+    search_results = es.search(index=index, body={"query": {"query_string": {"query": query}}, "size": 50})
     hits = search_results["hits"]["hits"]
     return hits
 
@@ -411,13 +476,39 @@ def gpt_chat():
         presence_penalty=0,
         stop=None)
 
+    search_results = es.search(index=patient_index, body={
+                                            "_source": ["Name", "Life Story"],
+                                            "aggs": {
+                                                "full_name": {
+                                                "terms": {
+                                                    "field": "Name.keyword"
+                                                }
+                                                }
+                                            }
+                                            })
+    hits = search_results["hits"]["hits"]
+    # st.json(hits)
+    stories = {}
+    for hit in hits:
+        if "Name" in hit["_source"] and "Life Story" in hit["_source"]:
+            stories[hit["_source"]["Name"]] = hit["_source"]["Life Story"]
+    
+
     prompt = st.text_area("Enter your prompt")
+    patient_story = st.multiselect("Add Patient Stories", options=stories.keys())
     run_but = st.button("Run")
     # message("Hello! I am your story assistant. How may I help you?", is_user=False)
 
 
     #if st.button("Chat"):
-    if prompt or run_but:
+    #prompt or 
+    if run_but:
+        i = 1
+        if len(patient_story) > 0:
+            story_list = ""
+            for patient in patient_story:
+                prompt = prompt + "\n" + str(i) + ". "+ stories[patient]
+                i = i + 1
         # print(prompt)
         response = openai.ChatCompletion.create(engine=os.environ['azure_openai_engine'],
                                                 messages = [{"role": "user", "content": prompt}],
@@ -863,6 +954,7 @@ def email_registry():
             server.quit()
             st.info("Sent")
 
+
 def upload_process_sheets():
     uploaded_file = st.file_uploader("Upload Sheets with Responses", type=["xls", "xlsx"], key="upload_sheets")
     if uploaded_file:
@@ -878,9 +970,127 @@ def upload_process_sheets():
             bulk(es, document_list, index='patient_external_v2')
             st.info("Indexed")
 
+def dashboard():
+    #map, wordcloud, stats = st.tabs(["Map", "WordCloud", "Statistics"])
+    continuous_attributes = ["Age"]
+    categorical_attributes = ["Gender"]
+    search_results = search_es("*", patient_index)
+    for hit in search_results:
+       if "Tags" in hit["_source"]:
+           if type(hit["_source"]["Tags"]) == str:
+               hit["_source"]["Tags"] = hit["_source"]["Tags"].split(',')
+    loc_data = []
+    text_data = []
+    images_num = 0
+    location_num = 0
+    df_age = None
+    df_gender = None
 
+    if search_results:
+        df = pd.DataFrame([hit["_source"] for hit in search_results])
+        if "Location" in df.columns:
+            df_loc = pd.json_normalize(df["Location"])
+            df_loc.dropna(inplace=True)
+            df_loc.columns = ["address", "lat", "lon", "properties"]
+            loc_data =  df_loc.to_dict("records") 
+            location_num = len(df_loc["address"].drop_duplicates())
+        if "Life Story" in df.columns:
+            text_data = list(df["Life Story"])
+        if "Picture_source":
+            images_num = len(df["Picture_source"].dropna())
+        if "Age" in df:
+            df_age = df[["Age"]]
+        if "Picture_gender" in df.columns:
+            df_gender = pd.json_normalize(df["Picture_gender"])
+            df_gender.columns = ["Gender", "Confidence"]
+            df_gender["Gender"].fillna("Other", inplace=True)
+            
 
+    df_stats = pd.concat([df_age, df_gender], axis=1)
 
+   
+    st.header("Summary")
+    kpi1, kpi2, kpi3 = st.columns(3)
+
+    # fill in those three columns with respective metrics or KPIs
+    kpi1.metric("""**:blue[Patient Count]**""", len(search_results))
+    kpi2.metric("""**:blue[Image Count]**""", images_num)
+    kpi3.metric("""**:blue[Unique Locations]**""", location_num)
+
+   # with map:
+    st.markdown("---") 
+    st.header("Patient Location")  
+   
+    m = folium.Map()
+    for d in loc_data:
+        lat = d.get("lat")
+        lon = d.get("lon")
+        if lat and lon:
+            folium.Marker([lat, lon]).add_to(m)  
+    folium_static(m)
+    #with wordcloud:
+    st.markdown("---") 
+    st.header("Patient Voice")  
+   
+    text = ""  
+    for i in range(0, len(text_data)):  
+        text += str(text_data[i]) + " "  
+    wordcloud = WordCloud(width=800, height=400, stopwords=stopwords, background_color="white").generate(text)  
+    st.image(wordcloud.to_image())
+    
+    st.markdown("---") 
+    st.header("Statistics")
+    num_colors = len(continuous_attributes)
+    if num_colors < 3:
+        num_colors = 3
+    colors = Category10[num_colors]
+    color_mapping = dict(zip(continuous_attributes, colors))
+
+    for attribute in continuous_attributes:
+        st.markdown("## :blue[" + attribute+"]")
+        hist_value, edges = np.histogram(df_stats[attribute], bins=10)
+        p = figure()
+        p.quad(top=hist_value, bottom=0, left=edges[:-1], right=edges[1:],
+            fill_color=color_mapping[attribute], line_color="white", alpha=1)
+        p.y_range.start = 0
+        p.legend.location = 'center_right'
+        p.xaxis.axis_label = attribute
+        p.yaxis.axis_label = 'Patient Count'
+        st.bokeh_chart(p, use_container_width=True)
+    
+    fig_list = st.columns(len(categorical_attributes))
+    for fig, attribute in zip(fig_list, categorical_attributes):
+        with fig:
+            st.markdown("## :blue[" + attribute+"]")
+            unique_values = df_stats[attribute].unique()
+            num_colors = len(unique_values)
+            if num_colors < 3:
+                num_colors = 3
+            color_scheme = Category10[num_colors]
+            color_mapping = dict(zip(unique_values, color_scheme))
+            val_counts = df_stats[attribute].value_counts()
+            val_counts_df = pd.Series(val_counts).reset_index(name='value').rename(columns={'index': attribute})
+            # st.dataframe(val_counts_df)
+            total_sum = val_counts_df['value'].sum()
+            val_counts_df['end_angle'] = val_counts_df['value'].div(total_sum).mul(2 * np.pi).cumsum().round(6)
+            val_counts_df["start_angle"] = val_counts_df["end_angle"].shift(1).fillna(0)
+            val_counts_df['color'] = [color_mapping[value] for value in list(val_counts_df[attribute])]
+
+            p = figure(plot_height=350, title="", toolbar_location=None,
+                    tools="hover", tooltips="@value", x_range=(-.5, .5))
+
+            wedges = p.annular_wedge(x=0, y=1, inner_radius=0.15, outer_radius=0.25, direction="anticlock",
+                                    start_angle='start_angle', end_angle='end_angle',
+                                    line_color="white", fill_color='color', legend=attribute, source=val_counts_df)
+
+            p.axis.axis_label = None
+            p.axis.visible = False
+            p.grid.grid_line_color = None
+            p.legend.location = 'top_left'
+            p.legend.label_text_font_size = '6pt'
+            st.bokeh_chart(p, use_container_width=False)
+        
+    
 
 
 
