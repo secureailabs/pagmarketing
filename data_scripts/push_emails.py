@@ -39,8 +39,8 @@ if send:
         i = i + 1
         # if i <= 281: #recently_diagnosed
         #     continue
-        if (i <= 50):
-            continue
+        # if (i <= 50):
+        #     continue
         try:
             body = email_info["body"]
             subject = email_info["subject"]
