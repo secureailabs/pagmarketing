@@ -31,10 +31,10 @@ with st.spinner("Loading models"):
 
 
 if 'youtube_response_videos' not in st.session_state:
-    st.session_state['youtube_response_videos'] = []
+    st.session_state['youtube_response_videos'] = {}
 
 if 'tiktok_response_videos' not in st.session_state:
-    st.session_state['tiktok_response_videos'] = []
+    st.session_state['tiktok_response_videos'] = {}
 
 if "tiktok_mapping" not in st.session_state:
     st.session_state["tiktok_mapping"] = {}
@@ -70,17 +70,17 @@ if os.path.isfile("data/default_youtube_response_videos.pkl"):
         st.session_state['youtube_response_videos'] = pickle.load(f)
 
 
-if os.path.isfile("data/transcription_mapping.pkl"):
-     with open("data/transcription_mapping.pkl", 'rb') as f :
+if os.path.isfile("data/default_transcription_mapping.pkl"):
+     with open("data/default_transcription_mapping.pkl", 'rb') as f :
         st.session_state['transcription'] = pickle.load(f)
 
-if os.path.isfile("data/transcription_video_mapping.pkl"):
-     with open("data/transcription_video_mapping.pkl", 'rb') as f :
+if os.path.isfile("data/default_transcription_video_mapping.pkl"):
+     with open("data/default_transcription_video_mapping.pkl", 'rb') as f :
         st.session_state['transcription_video'] = pickle.load(f)
 
 
-if os.path.isfile("data/reddit_responses.pkl"):
-     with open("data/reddit_responses.pkl", 'rb') as f :
+if os.path.isfile("data/default_reddit_responses.pkl"):
+     with open("data/default_reddit_responses.pkl", 'rb') as f :
         st.session_state['reddit_responses'] = pickle.load(f)
 
 
@@ -117,9 +117,10 @@ def download_youtube(video_page_url: str, output_path : str) -> None:
 def download_video(url, folder, extension=".mp4"):
     if "youtu" in url:
         return download_youtube(url, folder)
-    if url in  st.session_state["tiktok_mapping"]:
-        return  st.session_state["tiktok_mapping"][url]
-    # Send a GET request  
+    for query in st.session_state["tiktok_mapping"]:
+        if url in  st.session_state["tiktok_mapping"][query]:
+            return  st.session_state["tiktok_mapping"][query][url]
+        # Send a GET request  
     response = requests.get(url, stream=True)  
     # Check if the request is successful  
     if response.status_code == 200:  
@@ -296,7 +297,7 @@ def social_search():
     if search:
         ## Youtube
         
-        if query != st.session_state["query"] or len(st.session_state['youtube_response_videos']) == 0:
+        if query not in st.session_state['youtube_response_videos']:
             request = youtube.search().list(
                     q=query,  
                     part="snippet",  
@@ -305,7 +306,7 @@ def social_search():
                     key=google_api_key
             )
             response_video = request.execute()
-            st.session_state['youtube_response_videos'] = response_video
+            st.session_state['youtube_response_videos'][query] = response_video
             
             
 
@@ -320,7 +321,8 @@ def social_search():
         "disableEnrichAuthorStats": False,
         "disableCheerioBoost": False,
         } 
-        if query != st.session_state["query"] or len(st.session_state['tiktok_response_videos']) == 0:
+        #if query != st.session_state["query"] or len(st.session_state['tiktok_response_videos']) == 0:
+        if query not in st.session_state['tiktok_response_videos']:
             data = []
             with st.spinner('Searching...'):
                 run = client.actor("clockworks/free-tiktok-scraper").call(run_input=run_input)
@@ -328,7 +330,7 @@ def social_search():
                     data.append(item)
             # with open('tiktok_sample_dataset.json') as json_file:
             #     data = json.load(json_file)
-                st.session_state['tiktok_response_videos'] = data
+                st.session_state['tiktok_response_videos'][query] = data
         
         #st.session_state["query"] = query
 
@@ -351,7 +353,8 @@ def social_search():
                                 "proxy": {"useApifyProxy": True},
                                 "debugMode": False,
         }
-        if query != st.session_state["query"] or len(st.session_state['reddit_responses']) == 0:
+       # if query != st.session_state["query"] or len(st.session_state['reddit_responses']) == 0:
+        if query not in st.session_state['reddit_responses']:
             data = []
             with st.spinner('Searching...'):
                 run = client.actor("trudax/reddit-scraper-lite").call(run_input=run_input_reddit)
@@ -359,7 +362,7 @@ def social_search():
                     data.append(item)
             # with open('tiktok_sample_dataset.json') as json_file:
             #     data = json.load(json_file)
-                st.session_state['reddit_responses'] = data
+                st.session_state['reddit_responses'][query] = data
         
         # st.info(data)
         
@@ -374,7 +377,7 @@ def social_search():
             with open('data/youtube_response_videos.pkl', 'wb') as outp:
                 pickle.dump(st.session_state['youtube_response_videos'], outp)
             with youtube_con:
-                response_video = st.session_state['youtube_response_videos']
+                response_video = st.session_state['youtube_response_videos'][query]
                 df = pd.json_normalize(response_video["items"])
                 df["video_link"] = video_link_prefix + df["id.videoId"]
                 cols = st.columns(videos_per_row)
@@ -396,7 +399,7 @@ def social_search():
             if len(st.session_state['tiktok_response_videos']) > 0:
                 with open('data/tiktok_response_videos.pkl', 'wb') as outp:
                     pickle.dump(st.session_state['tiktok_response_videos'], outp)
-                response_video = st.session_state['tiktok_response_videos']
+                response_video = st.session_state['tiktok_response_videos'][query]
                 view_tt = []
                 for item in response_video:
                     view_tt.append((item["authorMeta"]["name"],
@@ -409,8 +412,11 @@ def social_search():
                                 [temp["name"] for temp in item["hashtags"]]))
                 df = pd.DataFrame(view_tt, columns=["name", "following", "fans", "number_videos", "text", "video", "download_video", "hashtags"])
                 df["download_location"] = "temp"
-                if len(st.session_state["tiktok_mapping"]) > 0:
-                    df["download_location"] = list(st.session_state["tiktok_mapping"].values())
+                if "query" in st.session_state["tiktok_mapping"]:
+                #if len(st.session_state["tiktok_mapping"][query]) > 0:
+                    df["download_location"] = list(st.session_state["tiktok_mapping"][query].values())
+                else:
+                    st.session_state["tiktok_mapping"][query] = {}
 
                 cols_tt = st.columns(videos_per_row)
                 i = 0
@@ -429,7 +435,7 @@ def social_search():
                                 video_file = download_video(download_link, tiktok_video_folder)
                                 # st.info(video_file)
                                 df["download_location"][index] = video_file
-                                st.session_state["tiktok_mapping"][download_link] = video_file
+                                st.session_state["tiktok_mapping"][query][download_link] = video_file
                                 
                             if video_file != "temp":
                                 st.video(video_file)
@@ -441,7 +447,7 @@ def social_search():
             if len(st.session_state['reddit_responses']) > 0:
                 with open('data/reddit_responses.pkl', 'wb') as outp:
                     pickle.dump(st.session_state['reddit_responses'], outp)
-            reddit = st.session_state['reddit_responses']
+            reddit = st.session_state['reddit_responses'][query]
             view_tt = []
             for item in reddit:
                 view_tt.append([item['username'], 
