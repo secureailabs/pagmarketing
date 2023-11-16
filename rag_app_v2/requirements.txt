@@ -1,0 +1,6 @@
+streamlit
+openai
+pymilvus
+langchain
+sentence-transformers
+pandas
