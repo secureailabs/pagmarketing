@@ -14,17 +14,17 @@ RUN apt-get update && apt-get install -y \
 
 COPY . .
 
-RUN mkdir /app/data
+#RUN mkdir /app/data
 
 COPY app/ /app/
-COPY data/ /app/data
+#COPY data/ /app/data
 
 RUN pip3 install -r requirements.txt
 RUN cd ..
 
 
-EXPOSE 8502
+EXPOSE 8501
 
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
 
-ENTRYPOINT ["streamlit", "run", "app/rag_streamlit.py", "--server.port=8502", "--server.address=0.0.0.0"]
+ENTRYPOINT ["streamlit", "run", "app/rag_streamlit.py", "--server.port=8501", "--server.address=0.0.0.0"]
